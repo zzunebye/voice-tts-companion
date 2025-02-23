@@ -6,3 +6,9 @@ available in the app when your plugin is enabled.
 If your plugin does not need CSS, delete this file.
 
 */
+
+
+.audio-controls button {
+    margin: 5px;
+    padding: 5px 10px;
+  }

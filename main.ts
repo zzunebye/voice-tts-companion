@@ -1,86 +1,130 @@
-import { App, Editor, MarkdownView, Modal, Notice, Plugin, PluginSettingTab, Setting } from 'obsidian';
-
-// Remember to rename these classes and interfaces!
-
-interface MyPluginSettings {
-	mySetting: string;
-}
-
-const DEFAULT_SETTINGS: MyPluginSettings = {
-	mySetting: 'default'
-}
+import { Plugin, WorkspaceLeaf, Notice, MarkdownView } from 'obsidian';
+import { AudioControlView, VIEW_TYPE_AUDIO_CONTROL } from './audioView';
+import { MyPluginSettings, DEFAULT_SETTINGS, MyPluginSettingTab } from './setting';
+import { generateSpeechForSentences } from './api';
+import './styles.css';
+import { cleanSentence } from 'helpers';
+import { PluginState } from 'enum';
 
 export default class MyPlugin extends Plugin {
+	currentState: PluginState = PluginState.Idle;
 	settings: MyPluginSettings;
+	currentAudio: HTMLAudioElement | null = null;
+	audioViewLeaf: WorkspaceLeaf | null = null;
 
 	async onload() {
 		await this.loadSettings();
+		this.addSettingTab(new MyPluginSettingTab(this.app, this));
 
-		// This creates an icon in the left ribbon.
-		const ribbonIconEl = this.addRibbonIcon('dice', 'Sample Plugin', (evt: MouseEvent) => {
-			// Called when the user clicks the icon.
-			new Notice('This is a notice!');
-		});
-		// Perform additional things with the ribbon
-		ribbonIconEl.addClass('my-plugin-ribbon-class');
+		// Register the audio control view
+		this.registerView(VIEW_TYPE_AUDIO_CONTROL, (leaf) => new AudioControlView(leaf, this));
 
-		// This adds a status bar item to the bottom of the app. Does not work on mobile apps.
-		const statusBarItemEl = this.addStatusBarItem();
-		statusBarItemEl.setText('Status Bar Text');
-
-		// This adds a simple command that can be triggered anywhere
+		// Command for entire document
 		this.addCommand({
-			id: 'open-sample-modal-simple',
-			name: 'Open sample modal (simple)',
-			callback: () => {
-				new SampleModal(this.app).open();
-			}
+			id: 'generate-speech-entire-document',
+			name: 'Generate Speech for Entire Document',
+			editorCallback: async (editor) => {
+				const text = editor.getValue();
+				await this.generateAndPlaySpeech(text);
+			},
 		});
-		// This adds an editor command that can perform some operation on the current editor instance
-		this.addCommand({
-			id: 'sample-editor-command',
-			name: 'Sample editor command',
-			editorCallback: (editor: Editor, view: MarkdownView) => {
-				console.log(editor.getSelection());
-				editor.replaceSelection('Sample Editor Command');
-			}
-		});
-		// This adds a complex command that can check whether the current state of the app allows execution of the command
-		this.addCommand({
-			id: 'open-sample-modal-complex',
-			name: 'Open sample modal (complex)',
-			checkCallback: (checking: boolean) => {
-				// Conditions to check
-				const markdownView = this.app.workspace.getActiveViewOfType(MarkdownView);
-				if (markdownView) {
-					// If checking is true, we're simply "checking" if the command can be run.
-					// If checking is false, then we want to actually perform the operation.
-					if (!checking) {
-						new SampleModal(this.app).open();
-					}
 
-					// This command will only show up in Command Palette when the check function returns true
-					return true;
+		// Command for selected text
+		this.addCommand({
+			id: 'generate-speech-selection',
+			name: 'Generate Speech for Selected Text',
+			editorCheckCallback: (checking: boolean, editor) => {
+				if (checking) {
+					return !!editor.getSelection();
 				}
+				const text = editor.getSelection();
+				if (text) {
+					this.generateAndPlaySpeech(text);
+				}
+			},
+		});
+
+		this.addRibbonIcon('volume-2', 'Generate Speech', () => {
+			// Get the active Markdown view
+			const activeView = this.app.workspace.getActiveViewOfType(MarkdownView);
+			if (activeView) {
+				// Retrieve the document text
+				const editor = activeView.editor;
+				const text = editor.getValue();
+
+				// Check if the document is empty
+				if (text.trim() === '') {
+					new Notice('The document is empty.');
+					return;
+				}
+
+				// Generate and play speech using the existing method
+				this.generateAndPlaySpeech(text);
+			} else {
+				// Display notice if no Markdown file is open
+				new Notice('Please open a Markdown file to generate speech.');
 			}
 		});
 
-		// This adds a settings tab so the user can configure various aspects of the plugin
-		this.addSettingTab(new SampleSettingTab(this.app, this));
+		// Add context menu items
+		this.registerEvent(
+			this.app.workspace.on('editor-menu', (menu, editor) => {
+				menu.addItem((item) => {
+					item
+						.setTitle('Generate Speech for Entire Document')
+						.setIcon('volume-2')
+						.onClick(() => {
+							const text = editor.getValue();
+							this.generateAndPlaySpeech(text);
+						});
+				});
 
-		// If the plugin hooks up any global DOM events (on parts of the app that doesn't belong to this plugin)
-		// Using this function will automatically remove the event listener when this plugin is disabled.
-		this.registerDomEvent(document, 'click', (evt: MouseEvent) => {
-			console.log('click', evt);
-		});
-
-		// When registering intervals, this function will automatically clear the interval when the plugin is disabled.
-		this.registerInterval(window.setInterval(() => console.log('setInterval'), 5 * 60 * 1000));
+				if (editor.getSelection()) {
+					menu.addItem((item) => {
+						item
+							.setTitle('Generate Speech for Selected Text')
+							.setIcon('volume-2')
+							.onClick(() => {
+								const text = editor.getSelection();
+								this.generateAndPlaySpeech(text);
+							});
+					});
+				}
+			})
+		);
 	}
 
-	onunload() {
+	// async generateAndPlaySpeech(text: string) {
+	// 	if (!this.settings.apiKey) {
+	// 		new Notice('Please set your ElevenLabs API key in the settings.');
+	// 		return;
+	// 	}
 
-	}
+	// 	try {
+	// 		new Notice('Generating speech...');
+	// 		const audioBlob = await generateSpeech(text, this.settings.apiKey);
+	// 		const url = URL.createObjectURL(audioBlob);
+
+	// 		if (this.currentAudio) {
+	// 			this.currentAudio.pause();
+	// 			URL.revokeObjectURL(this.currentAudio.src); // Clean up previous URL
+	// 		}
+
+	// 		this.currentAudio = new Audio(url);
+	// 		this.currentAudio.play();
+	// 		this.openAudioControlView();
+	// 	} catch (error) {
+	// 		new Notice(`Error generating speech: ${error.message}`);
+	// 	}
+	// }
+
+	// openAudioControlView() {
+	// 	if (!this.audioViewLeaf) {
+	// 		this.audioViewLeaf = this.app.workspace.getRightLeaf(false);
+	// 		this.audioViewLeaf.setViewState({ type: VIEW_TYPE_AUDIO_CONTROL });
+	// 	}
+	// 	this.app.workspace.revealLeaf(this.audioViewLeaf);
+	// }
 
 	async loadSettings() {
 		this.settings = Object.assign({}, DEFAULT_SETTINGS, await this.loadData());
@@ -89,46 +133,87 @@ export default class MyPlugin extends Plugin {
 	async saveSettings() {
 		await this.saveData(this.settings);
 	}
-}
 
-class SampleModal extends Modal {
-	constructor(app: App) {
-		super(app);
+	onunload() {
+		if (this.currentAudio) {
+			this.currentAudio.pause();
+			URL.revokeObjectURL(this.currentAudio.src);
+		}
 	}
 
-	onOpen() {
-		const {contentEl} = this;
-		contentEl.setText('Woah!');
+	async generateAndPlaySpeech(text: string) {
+		if (this.currentState === PluginState.Generating || this.currentState === PluginState.Playing) {
+			new Notice('Please wait for the current operation to finish.');
+			return;
+		}
+
+		if (!this.settings.apiKey) {
+			new Notice('Please set your ElevenLabs API key in the settings.');
+			return;
+		}
+
+		try {
+			this.currentState = PluginState.Generating;
+			new Notice('Generating speech...');
+			const sentences = this.splitIntoSentences(text);
+			const audioBlobs = await generateSpeechForSentences(sentences, this.settings.apiKey);
+			this.currentState = PluginState.Idle; // Generation complete
+
+			const audioElements = audioBlobs.map((blob) => new Audio(URL.createObjectURL(blob)));
+			this.playSentencesSequentially(audioElements);
+			this.openAudioControlView(audioElements);
+		} catch (error) {
+			new Notice(`Error generating speech: ${error.message}`);
+			this.currentState = PluginState.Idle;
+		}
 	}
 
-	onClose() {
-		const {contentEl} = this;
-		contentEl.empty();
-	}
-}
-
-class SampleSettingTab extends PluginSettingTab {
-	plugin: MyPlugin;
-
-	constructor(app: App, plugin: MyPlugin) {
-		super(app, plugin);
-		this.plugin = plugin;
+	splitIntoSentences(text: string): string[] {
+		// Simple sentence splitting; improve as needed
+		const sentences = text.match(/[^.!?]+[.!?]+/g) || [text];
+		return sentences.map(cleanSentence);
 	}
 
-	display(): void {
-		const {containerEl} = this;
+	playSentencesSequentially(audioElements: HTMLAudioElement[]) {
+		if (this.currentState !== PluginState.Idle) {
+			return; // Only play if idle
+		}
+		this.currentState = PluginState.Playing;
+		let index = 0;
 
-		containerEl.empty();
+		const playNext = () => {
+			if (index < audioElements.length) {
+				const audio = audioElements[index];
+				audio.play();
+				audio.onended = () => {
+					index++;
+					if (index < audioElements.length) {
+						playNext();
+					} else {
+						this.currentState = PluginState.Idle;
+					}
+				};
+			} else {
+				this.currentState = PluginState.Idle;
+			}
+		};
 
-		new Setting(containerEl)
-			.setName('Setting #1')
-			.setDesc('It\'s a secret')
-			.addText(text => text
-				.setPlaceholder('Enter your secret')
-				.setValue(this.plugin.settings.mySetting)
-				.onChange(async (value) => {
-					this.plugin.settings.mySetting = value;
-					await this.plugin.saveSettings();
-				}));
+		playNext();
 	}
+	openAudioControlView(audioElements: HTMLAudioElement[]) {
+		if (!this.audioViewLeaf) {
+			this.audioViewLeaf = this.app.workspace.getRightLeaf(false);
+			this.audioViewLeaf.setViewState({ type: VIEW_TYPE_AUDIO_CONTROL });
+		}
+		this.app.workspace.revealLeaf(this.audioViewLeaf);
+
+		// Update the view with the new audio elements
+		const view = this.app.workspace.getLeavesOfType(VIEW_TYPE_AUDIO_CONTROL)[0].view as AudioControlView;
+		view.setAudioElements(audioElements);
+	}
+
+
+
+
+
 }
