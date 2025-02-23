@@ -6,51 +6,25 @@ import { PluginState } from 'enum';
 export const VIEW_TYPE_AUDIO_CONTROL = 'my-audio-view';
 
 export class AudioControlView extends ItemView {
-    getViewType(): string {
-        return VIEW_TYPE_AUDIO_CONTROL;
-    }
-    getDisplayText(): string {
-        return 'Audio Controls';
-    }
     plugin: MyPlugin;
-    audioElements: HTMLAudioElement[] = [];
-    currentIndex: number = 0;
+    currentDocId: string | null = null;
 
     constructor(leaf: WorkspaceLeaf, plugin: MyPlugin) {
         super(leaf);
         this.plugin = plugin;
     }
 
-    setAudioElements(audioElements: HTMLAudioElement[]) {
-        this.audioElements = audioElements;
-        this.currentIndex = 0;
+    getViewType(): string {
+        return VIEW_TYPE_AUDIO_CONTROL;
+    }
 
-        // Attach event listeners to audio elements
-        this.audioElements.forEach((audio, index) => {
-            audio.addEventListener('play', () => {
-                if (index === this.currentIndex) {
-                    this.plugin.currentState = PluginState.Playing;
-                    this.updatePlayPauseButton();
-                }
-            });
-            audio.addEventListener('pause', () => {
-                if (index === this.currentIndex) {
-                    this.plugin.currentState = PluginState.Paused;
-                    this.updatePlayPauseButton();
-                }
-            });
-            audio.addEventListener('ended', () => {
-                if (this.currentIndex < this.audioElements.length - 1) {
-                    this.currentIndex++;
-                    this.audioElements[this.currentIndex].play();
-                } else {
-                    this.plugin.currentState = PluginState.Idle;
-                    this.updatePlayPauseButton();
-                }
-            });
-        });
+    getDisplayText(): string {
+        return 'Audio Controls';
+    }
 
-        this.updatePlayPauseButton(); // Ensure the button reflects the initial state
+    updateForDocument(docId: string | null) {
+        this.currentDocId = docId;
+        this.updateControls();
     }
 
     async onOpen() {
@@ -59,80 +33,119 @@ export class AudioControlView extends ItemView {
         container.createEl('h4', { text: 'Audio Controls' });
 
         const rewindButton = container.createEl('button', { text: '<< 15s' });
-        const playPauseButton = container.createEl('button', { text: 'Play' });
+        const playPauseButton = container.createEl('button', { text: 'Play', cls: 'play-pause' });
         const forwardButton = container.createEl('button', { text: '>> 15s' });
         const nextSentenceButton = container.createEl('button', { text: 'Next Sentence' });
-
-        // Optional: Progress bar
         const progress = container.createEl('div', { text: '00:00 / 00:00' });
 
-        // Add event listeners
         rewindButton.addEventListener('click', () => {
-            if (this.audioElements[this.currentIndex]) {
-                this.audioElements[this.currentIndex].currentTime = Math.max(0, this.audioElements[this.currentIndex].currentTime - 15);
+            const docState = this.currentDocId ? this.plugin.documentStates.get(this.currentDocId) : null;
+            if (docState && docState.audioElements[docState.currentIndex]) {
+                const audio = docState.audioElements[docState.currentIndex];
+                audio.currentTime = Math.max(0, audio.currentTime - 15);
             }
         });
+
         playPauseButton.addEventListener('click', () => {
-            if (this.plugin.currentState === PluginState.Playing) {
-                this.audioElements[this.currentIndex].pause();
-                this.plugin.currentState = PluginState.Paused;
-                this.updatePlayPauseButton();
-            } else if (this.plugin.currentState === PluginState.Paused || this.plugin.currentState === PluginState.Idle) {
-                if (this.audioElements[this.currentIndex]) {
-                    this.audioElements[this.currentIndex].play();
-                    this.plugin.currentState = PluginState.Playing;
-                    this.updatePlayPauseButton();
+            const docState = this.currentDocId ? this.plugin.documentStates.get(this.currentDocId) : null;
+            if (!docState) return;
+
+            if (docState.state === PluginState.Playing) {
+                docState.audioElements[docState.currentIndex].pause();
+                docState.state = PluginState.Paused;
+            } else if (docState.state === PluginState.Paused || docState.state === PluginState.Idle) {
+                if (docState.audioElements[docState.currentIndex]) {
+                    docState.audioElements[docState.currentIndex].play();
+                    docState.state = PluginState.Playing;
                 }
             }
+            this.plugin.documentStates.set(this.currentDocId!, docState);
+            this.updatePlayPauseButton();
         });
 
-        this.updatePlayPauseButton();
-
         forwardButton.addEventListener('click', () => {
-            if (this.audioElements[this.currentIndex]) {
-                this.audioElements[this.currentIndex].currentTime = Math.min(
-                    this.audioElements[this.currentIndex].duration,
-                    this.audioElements[this.currentIndex].currentTime + 15
-                );
+            const docState = this.currentDocId ? this.plugin.documentStates.get(this.currentDocId) : null;
+            if (docState && docState.audioElements[docState.currentIndex]) {
+                const audio = docState.audioElements[docState.currentIndex];
+                audio.currentTime = Math.min(audio.duration, audio.currentTime + 15);
             }
         });
 
         nextSentenceButton.addEventListener('click', () => {
-            if (this.currentIndex < this.audioElements.length - 1) {
-                this.audioElements[this.currentIndex].pause();
-                this.currentIndex++;
-                this.audioElements[this.currentIndex].play();
-                this.plugin.currentState = PluginState.Playing;
+            const docState = this.currentDocId ? this.plugin.documentStates.get(this.currentDocId) : null;
+            if (!docState) return;
+
+            if (docState.currentIndex < docState.audioElements.length - 1) {
+                docState.audioElements[docState.currentIndex].pause();
+                docState.currentIndex++;
+                docState.audioElements[docState.currentIndex].play();
+                docState.state = PluginState.Playing;
+                this.plugin.documentStates.set(this.currentDocId!, docState);
                 this.updatePlayPauseButton();
             }
         });
 
         // Update progress
-        if (this.audioElements.length > 0) {
-            this.audioElements.forEach((audio) => {
-                audio.addEventListener('timeupdate', () => {
-                    if (audio === this.audioElements[this.currentIndex]) {
-                        const current = this.formatTime(audio.currentTime);
-                        const duration = this.formatTime(audio.duration);
-                        progress.setText(`${current} / ${duration}`);
-                    }
-                });
-                audio.addEventListener('ended', () => {
-                    if (this.currentIndex < this.audioElements.length - 1) {
-                        this.currentIndex++;
-                        this.audioElements[this.currentIndex].play();
-                    } else {
-                        playPauseButton.setText('Play');
-                    }
-                });
-            });
-        }
+        const updateProgress = () => {
+            const docState = this.currentDocId ? this.plugin.documentStates.get(this.currentDocId) : null;
+            if (docState && docState.audioElements[docState.currentIndex]) {
+                const audio = docState.audioElements[docState.currentIndex];
+                const current = this.formatTime(audio.currentTime);
+                const duration = this.formatTime(audio.duration);
+                progress.setText(`${current} / ${duration}`);
+            } else {
+                progress.setText('00:00 / 00:00');
+            }
+        };
 
+        // Set up progress update interval
+        const progressInterval = setInterval(updateProgress, 100);
+        this.register(() => clearInterval(progressInterval));
 
+        this.updateControls();
     }
 
     updateControls() {
-        // Logic to update controls based on current state
+        const docState = this.currentDocId ? this.plugin.documentStates.get(this.currentDocId) : null;
+        const playPauseButton = this.containerEl.querySelector('.play-pause') as HTMLButtonElement;
+        if (!playPauseButton) return;
+
+        if (!docState || docState.audioElements.length === 0) {
+            playPauseButton.disabled = true;
+            playPauseButton.textContent = 'Play';
+            return;
+        }
+
+        playPauseButton.disabled = docState.state === PluginState.Generating;
+        this.updatePlayPauseButton();
+    }
+
+    updatePlayPauseButton() {
+        const playPauseButton = this.containerEl.querySelector('.play-pause') as HTMLButtonElement;
+        if (!playPauseButton) return;
+
+        const docState = this.currentDocId ? this.plugin.documentStates.get(this.currentDocId) : null;
+        if (!docState) {
+            playPauseButton.textContent = 'Play';
+            playPauseButton.disabled = true;
+            return;
+        }
+
+        switch (docState.state) {
+            case PluginState.Playing:
+                playPauseButton.textContent = 'Pause';
+                playPauseButton.disabled = false;
+                break;
+            case PluginState.Paused:
+            case PluginState.Idle:
+                playPauseButton.textContent = 'Play';
+                playPauseButton.disabled = docState.audioElements.length === 0;
+                break;
+            case PluginState.Generating:
+                playPauseButton.textContent = 'Generating...';
+                playPauseButton.disabled = true;
+                break;
+        }
     }
 
     formatTime(seconds: number): string {
@@ -140,30 +153,11 @@ export class AudioControlView extends ItemView {
         const sec = Math.floor(seconds % 60);
         return `${min}:${sec < 10 ? '0' + sec : sec}`;
     }
-    updatePlayPauseButton() {
-        const playPauseButton = this.containerEl.querySelector('button.play-pause') as HTMLButtonElement;
-        if (playPauseButton) {
-            switch (this.plugin.currentState) {
-                case PluginState.Playing:
-                    playPauseButton.textContent = 'Pause';
-                    playPauseButton.disabled = false;
-                    break;
-                case PluginState.Paused:
-                case PluginState.Idle:
-                    playPauseButton.textContent = 'Play';
-                    playPauseButton.disabled = false;
-                    break;
-                case PluginState.Generating:
-                    playPauseButton.textContent = 'Generating...';
-                    playPauseButton.disabled = true;
-                    break;
-            }
-        }
-    }
-
 
     async onClose() {
-        this.audioElements.forEach((audio) => audio.pause());
+        const docState = this.currentDocId ? this.plugin.documentStates.get(this.currentDocId) : null;
+        if (docState) {
+            docState.audioElements.forEach(audio => audio.pause());
+        }
     }
-
 }
