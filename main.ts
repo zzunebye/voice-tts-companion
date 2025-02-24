@@ -119,14 +119,6 @@ export default class MyPlugin extends Plugin {
 		);
 	}
 
-	async loadSettings() {
-		this.settings = Object.assign({}, DEFAULT_SETTINGS, await this.loadData());
-	}
-
-	async saveSettings() {
-		await this.saveData(this.settings);
-	}
-
 	onunload() {
 		this.documentStates.forEach((state) => {
 			state.audioElements.forEach((audio) => {
@@ -172,7 +164,7 @@ export default class MyPlugin extends Plugin {
 			this.documentStates.set(docId, currentDocState);
 			new Notice('Generating speech...');
 			const sentences = this.splitIntoSentences(text);
-			const audioBlobs = await generateSpeechForSentences(sentences, this.settings.apiKey);
+			const audioBlobs = await generateSpeechForSentences(sentences, this.settings.ttsProvider, this.settings.apiKey);
 			currentDocState.state = PluginState.Idle;
 			currentDocState.audioElements = audioBlobs.map((blob) => new Audio(URL.createObjectURL(blob)));
 			currentDocState.currentIndex = 0;

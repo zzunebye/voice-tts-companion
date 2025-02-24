@@ -1,54 +1,26 @@
-export async function generateSpeech(text: string, apiKey: string): Promise<Blob> {
-    const response = await fetch('https://api.elevenlabs.io/v1/text-to-speech/9BWtsMINqrJLrRacOk9x', {
-        method: 'POST',
-        headers: {
-            'xi-api-key': apiKey, // ElevenLabs uses 'xi-api-key' header for authentication
-            'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-            text: text,
-            model_id: 'eleven_multilingual_v2', // Adjust based on ElevenLabs documentation
-            voice_settings: {
-                stability: 0.5,
-                similarity_boost: 0.5,
-            },
-        }),
-    });
+import { TTSProvider, TTSService, ElevenLabsTTS, NativeTTS } from './tts-service';
 
-    if (!response.ok) {
-        throw new Error('Failed to generate speech');
+export function createTTSService(provider: TTSProvider, apiKey: string): TTSService {
+    console.log(`Creating TTS service for provider: ${provider}`);
+    switch (provider) {
+        case TTSProvider.ELEVEN_LABS:
+            return new ElevenLabsTTS(apiKey);
+        case TTSProvider.NATIVE:
+            return new NativeTTS();
+        default:
+            throw new Error(`Unknown TTS provider: ${provider}`);
     }
-
-    return await response.blob();
 }
 
-export async function generateSpeechForSentences(sentences: string[], apiKey: string): Promise<Blob[]> {
-    const audioBlobs: Blob[] = [];
+export async function generateSpeech(text: string, provider: TTSProvider, apiKey: string): Promise<Blob> {
+    const service = createTTSService(provider, apiKey);
+    return await service.generateSpeech(text);
+}
 
-    for (const sentence of sentences) {
-        const response = await fetch('https://api.elevenlabs.io/v1/text-to-speech/9BWtsMINqrJLrRacOk9x', {
-            method: 'POST',
-            headers: {
-                'xi-api-key': apiKey,
-                'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({
-                text: sentence,
-                model_id: 'eleven_monolingual_v1',
-                voice_settings: {
-                    stability: 0.5,
-                    similarity_boost: 0.5,
-                },
-            }),
-        });
-
-        if (!response.ok) {
-            throw new Error('Failed to generate speech for sentence');
-        }
-
-        const blob = await response.blob();
-        audioBlobs.push(blob);
-    }
-
-    return audioBlobs;
+export async function generateSpeechForSentences(sentences: string[], provider: TTSProvider, apiKey: string): Promise<Blob[]> {
+    console.log(`Generating speech for sentences: ${sentences.length}`);
+    console.log(`Provider: ${provider}`);
+    console.log(`API Key: ${apiKey}`);
+    const service = createTTSService(provider, apiKey);
+    return await service.generateSpeechForSentences(sentences);
 }
