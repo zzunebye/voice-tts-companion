@@ -136,6 +136,14 @@ export default class MyPlugin extends Plugin {
 		});
 	}
 
+	async loadSettings() {
+		this.settings = Object.assign({}, DEFAULT_SETTINGS, await this.loadData());
+	}
+
+	async saveSettings() {
+		await this.saveData(this.settings);
+	}
+
 	async generateAndPlaySpeech(text: string) {
 		const activeView = this.app.workspace.getActiveViewOfType(MarkdownView);
 		if (!activeView || !activeView.file) {

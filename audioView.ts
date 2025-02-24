@@ -8,6 +8,8 @@ export const VIEW_TYPE_AUDIO_CONTROL = 'my-audio-view';
 export class AudioControlView extends ItemView {
     plugin: MyPlugin;
     currentDocId: string | null = null;
+    progressBar: HTMLProgressElement | null = null;
+    progressText: HTMLDivElement | null = null;
 
     constructor(leaf: WorkspaceLeaf, plugin: MyPlugin) {
         super(leaf);
@@ -27,16 +29,42 @@ export class AudioControlView extends ItemView {
         this.updateControls();
     }
 
+    calculateTotalProgress(docState: any): { totalDuration: number; currentPosition: number } {
+        if (!docState || !docState.audioElements.length) {
+            return { totalDuration: 0, currentPosition: 0 };
+        }
+
+        const totalDuration = docState.audioElements.reduce((sum: number, audio: HTMLAudioElement) => {
+            return sum + (audio.duration || 0);
+        }, 0);
+
+        const currentPosition = docState.audioElements.slice(0, docState.currentIndex).reduce((sum: number, audio: HTMLAudioElement) => {
+            return sum + (audio.duration || 0);
+        }, 0) + (docState.audioElements[docState.currentIndex]?.currentTime || 0);
+
+        return { totalDuration, currentPosition };
+    }
+
     async onOpen() {
         const container = this.containerEl.children[1];
         container.empty();
         container.createEl('h4', { text: 'Audio Controls' });
 
+        // Create progress bar
+        this.progressBar = container.createEl('progress', {
+            cls: 'audio-progress',
+            attr: { value: '0', max: '100' }
+        });
+        
+        this.progressText = container.createEl('div', { 
+            text: '00:00 / 00:00',
+            cls: 'audio-progress-text'
+        });
+
         const rewindButton = container.createEl('button', { text: '<< 15s' });
         const playPauseButton = container.createEl('button', { text: 'Play', cls: 'play-pause' });
         const forwardButton = container.createEl('button', { text: '>> 15s' });
         const nextSentenceButton = container.createEl('button', { text: 'Next Sentence' });
-        const progress = container.createEl('div', { text: '00:00 / 00:00' });
 
         rewindButton.addEventListener('click', () => {
             const docState = this.currentDocId ? this.plugin.documentStates.get(this.currentDocId) : null;
@@ -88,14 +116,16 @@ export class AudioControlView extends ItemView {
         // Update progress
         const updateProgress = () => {
             const docState = this.currentDocId ? this.plugin.documentStates.get(this.currentDocId) : null;
-            if (docState && docState.audioElements[docState.currentIndex]) {
-                const audio = docState.audioElements[docState.currentIndex];
-                const current = this.formatTime(audio.currentTime);
-                const duration = this.formatTime(audio.duration);
-                progress.setText(`${current} / ${duration}`);
-            } else {
-                progress.setText('00:00 / 00:00');
+            if (!docState || !this.progressBar || !this.progressText) return;
+
+            const { totalDuration, currentPosition } = this.calculateTotalProgress(docState);
+            
+            if (this.progressBar) {
+                this.progressBar.max = totalDuration;
+                this.progressBar.value = currentPosition;
             }
+            
+            this.progressText.setText(`${this.formatTime(currentPosition)} / ${this.formatTime(totalDuration)}`);
         };
 
         // Set up progress update interval
