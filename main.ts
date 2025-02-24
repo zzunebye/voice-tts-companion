@@ -178,9 +178,19 @@ export default class MyPlugin extends Plugin {
 		}
 	}
 
+	/**
+	 * Generates speech from the provided text and plays it back.
+	 * 
+	 * This function checks for an active Markdown view and the document ID,
+	 * verifies the current state, and ensures the API key is set. It then
+	 * generates audio blobs for each sentence using the ElevenLabs API,
+	 * updates the document state, and starts playback sequentially.
+	 * 
+	 * Errors during the process are caught and notified to the user.
+	 */
 	splitIntoSentences(text: string): string[] {
 		// Simple sentence splitting; improve as needed
-		const sentences = text.match(/[^.!?]+[.!?]+/g) || [text];
+		const sentences = text.match(/[^.!?*]+[.!?]+/g) || [text];
 		return sentences.map(cleanSentence);
 	}
 
@@ -197,7 +207,7 @@ export default class MyPlugin extends Plugin {
 	highlightCurrentSentence(docId: string) {
 		const activeView = this.app.workspace.getActiveViewOfType(MarkdownView);
 		const docState = this.documentStates.get(docId);
-		
+
 		if (!activeView || !docState || docState.currentIndex >= docState.audioElements.length) {
 			return;
 		}
@@ -206,7 +216,7 @@ export default class MyPlugin extends Plugin {
 		const text = editor.getValue();
 		const sentences = this.splitIntoSentences(text);
 		const currentSentence = sentences[docState.currentIndex];
-		
+
 		if (!currentSentence) return;
 
 		const position = this.findSentencePosition(text, currentSentence);
@@ -214,7 +224,7 @@ export default class MyPlugin extends Plugin {
 
 		const startPos = editor.offsetToPos(position.start);
 		const endPos = editor.offsetToPos(position.end);
-		
+
 		editor.setSelection(startPos, endPos);
 		editor.scrollIntoView({ from: startPos, to: endPos }, true);
 	}
@@ -232,15 +242,15 @@ export default class MyPlugin extends Plugin {
 		const playNext = () => {
 			if (index < docState.audioElements.length) {
 				const audio = docState.audioElements[index];
-				
+
 				// Set up timeupdate event for continuous highlighting
 				audio.ontimeupdate = () => {
 					this.highlightCurrentSentence(docId);
 				};
-				
+
 				audio.play();
 				this.highlightCurrentSentence(docId);
-				
+
 				audio.onended = () => {
 					index++;
 					docState.currentIndex = index;
@@ -251,7 +261,7 @@ export default class MyPlugin extends Plugin {
 						docState.state = PluginState.Idle;
 						this.documentStates.set(docId, docState);
 						this.updateAudioControlView();
-						
+
 						// Clear selection when finished
 						const activeView = this.app.workspace.getActiveViewOfType(MarkdownView);
 						if (activeView) {
