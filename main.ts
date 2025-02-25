@@ -5,6 +5,7 @@ import { generateSpeechForSentences } from './api';
 import './styles.css';
 import { cleanSentence } from 'helpers';
 import { PluginState } from 'enum';
+import { TTSProvider } from 'tts-service';
 
 interface DocumentState {
 	state: PluginState;
@@ -154,8 +155,13 @@ export default class MyPlugin extends Plugin {
 			return;
 		}
 
-		if (!this.settings.apiKey) {
+		if (this.settings.ttsProvider === TTSProvider.ELEVEN_LABS && !this.settings.elevenLabsApiKey) {
 			new Notice('Please set your ElevenLabs API key in the settings.');
+			return;
+		}
+
+		if (this.settings.ttsProvider === TTSProvider.UNREAL_SPEECH && !this.settings.unrealSpeechApiKey) {
+			new Notice('Please set your Unreal Speech API key in the settings.');
 			return;
 		}
 
@@ -164,7 +170,7 @@ export default class MyPlugin extends Plugin {
 			this.documentStates.set(docId, currentDocState);
 			new Notice('Generating speech...');
 			const sentences = this.splitIntoSentences(text);
-			const audioBlobs = await generateSpeechForSentences(sentences, this.settings.ttsProvider, this.settings.apiKey);
+			const audioBlobs = await generateSpeechForSentences(sentences, this.settings.ttsProvider, this.settings);
 			currentDocState.state = PluginState.Idle;
 			currentDocState.audioElements = audioBlobs.map((blob) => new Audio(URL.createObjectURL(blob)));
 			currentDocState.currentIndex = 0;
@@ -278,9 +284,13 @@ export default class MyPlugin extends Plugin {
 	openAudioControlView() {
 		if (!this.audioViewLeaf) {
 			this.audioViewLeaf = this.app.workspace.getRightLeaf(false);
-			this.audioViewLeaf.setViewState({ type: VIEW_TYPE_AUDIO_CONTROL });
+			if (this.audioViewLeaf) {
+				this.audioViewLeaf.setViewState({ type: VIEW_TYPE_AUDIO_CONTROL });
+			}
 		}
-		this.app.workspace.revealLeaf(this.audioViewLeaf);
+		if (this.audioViewLeaf) {
+			this.app.workspace.revealLeaf(this.audioViewLeaf);
+		}
 		this.updateAudioControlView();
 	}
 

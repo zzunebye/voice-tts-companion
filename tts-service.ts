@@ -2,7 +2,8 @@ import { Platform } from 'obsidian';
 
 export enum TTSProvider {
     ELEVEN_LABS = 'elevenlabs',
-    NATIVE = 'native'
+    NATIVE = 'native',
+    UNREAL_SPEECH = 'unrealspeech'
 }
 
 export interface TTSService {
@@ -11,7 +12,7 @@ export interface TTSService {
 }
 
 export class ElevenLabsTTS implements TTSService {
-    constructor(private apiKey: string) {}
+    constructor(private apiKey: string) { }
 
     async generateSpeech(text: string): Promise<Blob> {
         const response = await fetch('https://api.elevenlabs.io/v1/text-to-speech/9BWtsMINqrJLrRacOk9x', {
@@ -95,5 +96,87 @@ export class NativeTTS implements TTSService {
             blobs.push(blob);
         }
         return blobs;
+    }
+}
+
+export class UnrealSpeechTTS implements TTSService {
+    private voiceId: string;
+
+    constructor(private apiKey: string, voiceId = 'Sierra') {
+        this.voiceId = voiceId;
+    }
+
+    async generateSpeech(text: string): Promise<Blob> {
+        if (!text || text.trim() === '') {
+            console.warn('Empty text provided to UnrealSpeechTTS.generateSpeech');
+            // Return an empty audio blob
+            return new Blob([], { type: 'audio/mp3' });
+        }
+
+        try {
+            // First, make the request to generate speech
+            const response = await fetch('https://api.v8.unrealspeech.com/speech', {
+                method: 'POST',
+                headers: {
+                    'Authorization': `Bearer ${this.apiKey}`,
+                    'Content-Type': 'application/json',
+                },
+                redirect: 'follow',
+                body: JSON.stringify({
+                    Text: text,
+                    VoiceId: 'Sierra',
+                    Bitrate: '64k',
+                    Speed: 0,
+                    Pitch: 1.0,
+                }),
+            });
+
+            if (!response.ok) {
+                const errorData = await response.json().catch(() => ({}));
+                throw new Error(`Failed to generate speech: ${response.status} ${response.statusText} ${JSON.stringify(errorData)}`);
+            }
+
+            // Parse the response to get the OutputUri
+            const responseData = await response.json();
+            console.log('Unreal Speech API response:', responseData);
+            
+            if (!responseData.OutputUri) {
+                throw new Error('No output URI found in the response');
+            }
+
+            // Fetch the audio file from the provided URL
+            const audioResponse = await fetch(responseData.OutputUri);
+            if (!audioResponse.ok) {
+                throw new Error(`Failed to fetch audio file: ${audioResponse.status} ${audioResponse.statusText}`);
+            }
+
+            // Return the audio blob
+            return await audioResponse.blob();
+        } catch (error) {
+            console.error('Error in UnrealSpeechTTS.generateSpeech:', error);
+            throw error;
+        }
+    }
+
+    async generateSpeechForSentences(sentences: string[]): Promise<Blob[]> {
+        const audioBlobs: Blob[] = [];
+        
+        if (!sentences || sentences.length === 0) {
+            console.warn('Empty sentences array provided to UnrealSpeechTTS.generateSpeechForSentences');
+            return audioBlobs;
+        }
+
+        for (const sentence of sentences) {
+            try {
+                const blob = await this.generateSpeech(sentence);
+                audioBlobs.push(blob);
+            } catch (error) {
+                console.error(`Error generating speech for sentence: "${sentence}"`, error);
+                // Add an empty blob to maintain the sequence
+                audioBlobs.push(new Blob([], { type: 'audio/mp3' }));
+            }
+        }
+        
+        return audioBlobs;
     }
 } 
