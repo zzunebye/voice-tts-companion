@@ -7,15 +7,58 @@ If your plugin does not need CSS, delete this file.
 
 */
 
-.audio-controls button {
-    margin: 5px;
-    padding: 5px 10px;
+.audio-controls-container {
+    display: flex;
+    justify-content: center;
+    gap: 15px;
+    margin: 15px 0;
+}
+
+.audio-controls-container button {
+    flex: 1;
+    margin: 0;
+    padding: 8px 15px;
+    border-radius: 4px;
+    background-color: var(--interactive-normal);
+    color: var(--text-normal);
+    border: 1px solid var(--background-modifier-border);
+    cursor: pointer;
+    font-weight: 500;
+    min-width: 60px;
+    transition: background-color 0.2s ease;
+}
+
+.audio-controls-container button:hover {
+    background-color: var(--interactive-hover);
+}
+
+.audio-controls-container button:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+/* Status text styles */
+.audio-status-text {
+    text-align: center;
+    margin: 5px 0 10px;
+    font-size: 0.9em;
+    color: var(--text-normal);
+    font-weight: 500;
 }
 
 /* Style for highlighted text during playback */
 .cm-line .cm-selection {
     background-color: var(--text-highlight-bg);
     color: var(--text-normal);
+}
+
+/* Style for highlighted sentences in reading mode */
+.sentence-highlight {
+    background-color: var(--text-highlight-bg);
+    color: var(--text-normal);
+    border-radius: 3px;
+    padding: 0 2px;
+    transition: background-color 0.3s ease;
 }
 
 /* Progress bar styles */
