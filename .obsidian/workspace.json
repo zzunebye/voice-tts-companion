@@ -155,5 +155,10 @@
     }
   },
   "active": "b444a6a4c9d9e62a",
-  "lastOpenFiles": []
+  "lastOpenFiles": [
+    "version-bump.mjs",
+    "versions.json",
+    "audio-cache.json",
+    "audioCache.ts"
+  ]
 }
