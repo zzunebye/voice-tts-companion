@@ -6,6 +6,7 @@ import './styles.css';
 import { cleanSentence } from 'helpers';
 import { PluginState } from 'enum';
 import { TTSProvider } from 'tts-service';
+import { AudioCache } from './audioCache';
 
 interface DocumentState {
 	state: PluginState;
@@ -21,10 +22,19 @@ export default class MyPlugin extends Plugin {
 	documentStates: Map<string, DocumentState> = new Map();
 	currentAudio: HTMLAudioElement | null = null;
 	audioViewLeaf: WorkspaceLeaf | null = null;
+	audioCache: AudioCache;
 
 	async onload() {
 		await this.loadSettings();
 		this.addSettingTab(new MyPluginSettingTab(this.app, this));
+		
+		// Initialize the audio cache
+		this.audioCache = new AudioCache(this.app);
+		
+		// Configure the audio cache based on settings
+		this.audioCache.setEnabled(this.settings.enablePersistentCache);
+		this.audioCache.setMaxCacheSize(this.settings.maxCacheSize);
+		this.audioCache.setMaxCacheAge(this.settings.maxCacheAgeDays * 24 * 60 * 60 * 1000);
 
 		// Register the audio control view
 		this.registerView(VIEW_TYPE_AUDIO_CONTROL, (leaf) => new AudioControlView(leaf, this));
@@ -89,7 +99,10 @@ export default class MyPlugin extends Plugin {
 			this.app.vault.on('delete', (file) => {
 				if (file) {
 					const docId = file.path;
+					// Remove from in-memory document states
 					this.documentStates.delete(docId);
+					// Also clean up the persistent cache for this document
+					this.audioCache.clearDocumentEntries(docId);
 					this.updateAudioControlView();
 				}
 			})
@@ -231,10 +244,16 @@ export default class MyPlugin extends Plugin {
 		// Pause and clean up all audio elements
 		this.documentStates.forEach((state) => {
 			state.audioElements.forEach((audio) => {
-				audio?.pause();
-				URL.revokeObjectURL(audio?.src || '');
+				if (audio) {
+					audio.pause();
+					// Revoke object URLs to prevent memory leaks
+					URL.revokeObjectURL(audio.src);
+				}
 			});
 		});
+
+		// Clear the in-memory document states (but keep the persistent cache)
+		this.documentStates.clear();
 
 		// Clear any reading mode highlights
 		const activeView = this.app.workspace.getActiveViewOfType(MarkdownView);
@@ -783,20 +802,44 @@ export default class MyPlugin extends Plugin {
 			return null;
 		}
 
-		// If audio is already loaded, return it
+		// If audio is already loaded in memory, return it
 		if (docState.audioElements[index]) {
 			return docState.audioElements[index];
 		}
 
 		try {
-			// Generate speech for this sentence
 			const sentence = docState.sentences[index];
-			const audioBlob = await generateSpeech(sentence, this.settings.ttsProvider, this.settings);
+			let audioBlob: Blob;
+			
+			// Check if persistent cache is enabled and the audio is in the cache
+			if (this.settings.enablePersistentCache && this.audioCache.hasAudio(sentence, docId)) {
+				// Use the cached audio blob
+				const cachedBlob = this.audioCache.getAudio(sentence, docId);
+				if (cachedBlob) {
+					audioBlob = cachedBlob;
+				} else {
+					// Generate speech for this sentence
+					audioBlob = await generateSpeech(sentence, this.settings.ttsProvider, this.settings);
+					
+					// Store in persistent cache if enabled
+					if (this.settings.enablePersistentCache) {
+						await this.audioCache.storeAudio(sentence, docId, audioBlob);
+					}
+				}
+			} else {
+				// Generate speech for this sentence
+				audioBlob = await generateSpeech(sentence, this.settings.ttsProvider, this.settings);
+				
+				// Store in persistent cache if enabled
+				if (this.settings.enablePersistentCache) {
+					await this.audioCache.storeAudio(sentence, docId, audioBlob);
+				}
+			}
 			
 			// Create audio element
 			const audio = new Audio(URL.createObjectURL(audioBlob));
 			
-			// Store in document state
+			// Store in document state (in-memory cache)
 			docState.audioElements[index] = audio;
 			this.documentStates.set(docId, docState);
 			
@@ -1012,5 +1055,13 @@ export default class MyPlugin extends Plugin {
 		}
 		
 		this.updateAudioControlView();
+	}
+
+	// Refresh the cache statistics
+	refreshCacheStats(): { size: string; count: number } {
+		return {
+			size: this.audioCache.getFormattedSize(),
+			count: this.audioCache.getEntryCount()
+		};
 	}
 }
